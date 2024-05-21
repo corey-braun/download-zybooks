@@ -2,6 +2,7 @@
 import sys
 import argparse
 import logging
+import re
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, expect, Page, ElementHandle
@@ -52,6 +53,12 @@ def await_stable_html(page: Page, element: ElementHandle, poll_delay: int = 1000
 #        page.wait_for_timeout(poll_delay)
 #    logging.debug('Stable.')
 
+def sanitize_filename(name: str) -> str:
+    name = re.sub(r'[<>"\\|?*]', '', name)
+    name = re.sub(r'\s?:\s?', ' - ', name)
+    name = re.sub(r'\s?/\s?', ' and ', name)
+    return name
+
 def print_chapter(page: Page, url: str, file: Path):
     page.goto(url)
     # Becomes actionable when we have recieved all data, but before we have rendered everything
@@ -80,7 +87,7 @@ def print_zybook(page: Page, zybook_url: str, output_dir: Path = Path('.'), chap
     sliced_chapters = chapters[chapters_slice] if chapters_slice else chapters
     for i in sliced_chapters:
         chapter_url = f'{base_url}/chapter/{chapters.index(i)+1}/print'
-        file_name = output_dir.joinpath(i + '.pdf')
+        file_name = output_dir.joinpath(sanitize_filename(i) + '.pdf')
         logging.debug(chapter_url)
         print_chapter(page, chapter_url, file_name)
         logging.debug(file_name)
