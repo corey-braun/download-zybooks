@@ -2,6 +2,7 @@
 from playwright.sync_api import sync_playwright, Page
 import getpass
 import re
+from pathlib import Path
 
 
 class LoginError(Exception):
@@ -48,13 +49,13 @@ def zybooks_login(page: Page, course_url: str) -> None:
         raise LoginError
 
 def main():
-    auth_file = '.auth/state.json'
+    auth_file = Path('~/.download-zybooks-state.json').expanduser()
     course_url = 'https://my.wgu.edu/courses/course/23940006'
     username = None
     password = None
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = playwright.chromium.launch(headless=False)
         try:
             context = browser.new_context(storage_state=auth_file)
         except FileNotFoundError:
