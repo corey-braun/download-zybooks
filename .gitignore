@@ -1,5 +1,4 @@
-.auth/
+__pycache__/
 .venv/
 .vscode/
 output/
-__pycache__/

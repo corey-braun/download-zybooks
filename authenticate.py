@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-from playwright.sync_api import sync_playwright, Page
+import argparse
 import getpass
 import re
-from pathlib import Path
+
+from playwright.sync_api import sync_playwright, expect, Page
+
+from download_zybooks import path_arg
 
 
 class LoginError(Exception):
@@ -36,8 +39,8 @@ def wgu_login(page: Page, username: str = None, password: str = None) -> None:
         page.get_by_label("Username").fill(username or input('Enter username: '))
         page.get_by_label("Password").fill(password or getpass.getpass('Enter password: '))
         page.get_by_role("button", name="Sign On").click()
-    if not wgu_logged_in(page):
-        raise LoginError
+        if not wgu_logged_in(page):
+            raise LoginError
 
 def zybooks_login(page: Page, course_url: str) -> None:
     """Login to zyBooks via redirect from WGU course page."""
@@ -45,19 +48,23 @@ def zybooks_login(page: Page, course_url: str) -> None:
     #page.get_by_role("link", name="GO TO COURSE MATERIAL").click()
     page.goto(page.get_by_role("link", name="GO TO COURSE MATERIAL").get_attribute('href'))
     page.wait_for_url('https://learn.zybooks.com/zybook/**')
+    expect(page.locator('.table-of-contents')).to_be_visible()
     if not zybooks_logged_in(page):
         raise LoginError
 
 def main():
-    auth_file = Path('~/.download-zybooks-state.json').expanduser()
-    course_url = 'https://my.wgu.edu/courses/course/23940006'
-    username = None
-    password = None
+    parser = argparse.ArgumentParser(description='Authenticates to zyBooks via WGU and saves authenticated state to file')
+    parser.add_argument('-a', '--auth-file', type=path_arg, default='~/.download-zybooks-state.json', help='File storing authenticated session state')
+    parser.add_argument('--no-headless', dest='headless', action='store_false', help='Do not run browser in headless mode')
+    parser.add_argument('-u', '--username', help='WGU account username; Can also be provided via interactive input')
+    parser.add_argument('-p', '--password', help='WGU account password; Can also be provided via interactive input')
+    parser.add_argument('--course-url', default='https://my.wgu.edu/courses/course/23940006', help='URL of a WGU course which uses zyBooks instructional material')
+    args = parser.parse_args()
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)
+        browser = playwright.chromium.launch(headless=args.headless)
         try:
-            context = browser.new_context(storage_state=auth_file)
+            context = browser.new_context(storage_state=args.auth_file)
         except FileNotFoundError:
             context = browser.new_context()
             loaded_context = False
@@ -67,10 +74,10 @@ def main():
         with context.new_page() as page:
             if loaded_context and zybooks_logged_in(page):
                 return
-            wgu_login(page, username, password)
-            zybooks_login(page, course_url)
+            wgu_login(page, args.username, args.password)
+            zybooks_login(page, args.course_url)
 
-        context.storage_state(path=auth_file)
+        context.storage_state(path=args.auth_file)
 
 if __name__ == '__main__':
     main()
