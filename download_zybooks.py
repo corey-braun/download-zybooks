@@ -96,7 +96,7 @@ def main():
 
     parser_dl = subparsers.add_parser('dl', help='Download a zyBooks textbook')
     parser_dl.add_argument('zybook_url', help='URL of the zyBooks textbook to download')
-    parser_dl.add_argument('-o', '--output-dir', type=path_arg, default='output', help='Directory PDFs will be written to')
+    parser_dl.add_argument('-o', '--output-dir', type=path_arg, default='zybooks', help='Directory PDFs will be written to')
     parser_dl.add_argument('-s', '--chapters-slice', type=slice_arg, help='Slice object to limit which chapters should be printed')
     parser_dl.set_defaults(func=dl)
 
