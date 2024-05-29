@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-import sys
 import argparse
 import logging
 import re
+import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright, expect, Page, ElementHandle
+from playwright.sync_api import ElementHandle, Page, expect, sync_playwright
 
-#from authenticate import zybooks_logged_in
+import authenticate
 
-
-#class AuthenticationError(Exception):
-#    pass
 
 log_levels = {
     0: logging.ERROR,
@@ -26,7 +23,7 @@ def slice_arg(arg: str) -> slice:
 def path_arg(arg: str) -> Path:
     return Path(arg).expanduser()
 
-def await_stable_html(page: Page, element: ElementHandle, poll_delay: int = 1000):
+def await_stable_html(page: Page, element: ElementHandle, poll_delay: int = 1000) -> None:
     """Ensure that a page element has reached a stable state
     by confirming its inner HTML is identical after poll_delay milliseconds."""
     html_previous = str()
@@ -39,27 +36,13 @@ def await_stable_html(page: Page, element: ElementHandle, poll_delay: int = 1000
         page.wait_for_timeout(poll_delay)
     logging.debug('Stable.')
 
-# Alternative to await_stable_html, currently unused
-#def await_stable_screenshot(page: Page, element: ElementHandle, poll_delay: int = 1000):
-#    """Ensure that a page element has reached a stable state
-#    by confirming a screenshot of it is identical after poll_delay milliseconds."""
-#    screenshot_previous = bytes()
-#    while True:
-#        screenshot_current = element.screenshot(animations='disabled', scale='css')
-#        if screenshot_current == screenshot_previous:
-#            break
-#        logging.debug('Unstable!')
-#        screenshot_previous = screenshot_current
-#        page.wait_for_timeout(poll_delay)
-#    logging.debug('Stable.')
-
 def sanitize_filename(name: str) -> str:
     name = re.sub(r'[<>"\\|?*]', '', name)
     name = re.sub(r'\s?:\s?', ' - ', name)
     name = re.sub(r'\s?/\s?', ' and ', name)
     return name
 
-def print_chapter(page: Page, url: str, file: Path):
+def print_chapter(page: Page, url: str, file: Path) -> None:
     page.goto(url)
     # Becomes actionable when we have recieved all data, but before we have rendered everything
     page.get_by_role('button', name='Print').first.click(trial=True, timeout=600000)
@@ -80,8 +63,8 @@ def print_zybook(page: Page, zybook_url: str, output_dir: Path = Path('.'), chap
     logging.debug(f'Chapters: {chapters}')
     base_url = page.url.rstrip('/')
 
-    # ElementHandle.inner_html and ElementHandle.screenshot may exceed the default timeout of 30s for large chapters.
-    # These methods do not accept a 'timeout' parameter, so we must change the default timeout here.
+    # ElementHandle.inner_html may exceed the default timeout of 30s for large chapters.
+    # This method does not accept a 'timeout' parameter, so we must change the default timeout here.
     page.set_default_timeout(120000)
 
     sliced_chapters = chapters[chapters_slice] if chapters_slice else chapters
@@ -92,14 +75,31 @@ def print_zybook(page: Page, zybook_url: str, output_dir: Path = Path('.'), chap
         print_chapter(page, chapter_url, file_name)
         logging.debug(file_name)
 
+def dl(page: Page, args: argparse.Namespace) -> None:
+    print_zybook(
+        page,
+        args.zybook_url,
+        args.output_dir,
+        args.chapters_slice
+    )
+
 def main():
     parser = argparse.ArgumentParser(description='Downloads zyBooks e-textbook chapters as PDFs')
-    parser.add_argument('zybook_url', help='URL of the zyBooks textbook to download')
-    parser.add_argument('-o', '--output-dir', type=path_arg, default='output', help='Directory PDFs will be written to')
     parser.add_argument('-a', '--auth-file', type=path_arg, default='~/.download-zybooks-state.json', help='File storing authenticated session state')
     parser.add_argument('--no-headless', dest='headless', action='store_false', help='Do not run browser in headless mode')
-    parser.add_argument('-s', '--chapters-slice', type=slice_arg, help='Slice object to limit what chapters should be printed')
     parser.add_argument('-v', '--verbose', dest='verbosity', action='count', default=0, help='Logging verbosity (0-3 occurences); ERROR=0, WARN=1, INFO=2, DEBUG=3')
+    subparsers = parser.add_subparsers(required=True)
+
+    parser_auth = subparsers.add_parser('auth', help='Authenticate to zyBooks and save authenticated state to file')
+    authenticate.setup_parser(parser_auth)
+    parser_auth.set_defaults(func=authenticate.authenticate)
+
+    parser_dl = subparsers.add_parser('dl', help='Download a zyBooks textbook')
+    parser_dl.add_argument('zybook_url', help='URL of the zyBooks textbook to download')
+    parser_dl.add_argument('-o', '--output-dir', type=path_arg, default='output', help='Directory PDFs will be written to')
+    parser_dl.add_argument('-s', '--chapters-slice', type=slice_arg, help='Slice object to limit which chapters should be printed')
+    parser_dl.set_defaults(func=dl)
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -111,16 +111,12 @@ def main():
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=args.headless)
-        context = browser.new_context(storage_state=args.auth_file)
+        try:
+            context = browser.new_context(storage_state=args.auth_file)
+        except FileNotFoundError:
+            context = browser.new_context()
         with context.new_page() as page:
-            #if not zybooks_logged_in(page):
-            #    raise AuthenticationError('Not logged in to zyBooks')
-            print_zybook(
-                page,
-                args.zybook_url,
-                args.output_dir,
-                args.chapters_slice
-            )
+            args.func(page, args)
 
 if __name__ == '__main__':
     main()
