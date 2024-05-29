@@ -117,6 +117,8 @@ def main():
             context = browser.new_context()
         with context.new_page() as page:
             args.func(page, args)
+        if args.func == authenticate.authenticate:
+            context.storage_state(path=args.auth_file)
 
 if __name__ == '__main__':
     main()
