@@ -4,11 +4,11 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 from playwright.sync_api import ElementHandle, Page, expect, sync_playwright
 
 import authenticate
-
 
 log_levels = {
     0: logging.ERROR,
@@ -26,7 +26,7 @@ def path_arg(arg: str) -> Path:
 def await_stable_html(page: Page, element: ElementHandle, poll_delay: int = 1000) -> None:
     """Ensure that a page element has reached a stable state
     by confirming its inner HTML is identical after poll_delay milliseconds."""
-    html_previous = str()
+    html_previous = ''
     while True:
         html_current = element.inner_html()
         if html_current == html_previous:
@@ -39,8 +39,7 @@ def await_stable_html(page: Page, element: ElementHandle, poll_delay: int = 1000
 def sanitize_filename(name: str) -> str:
     name = re.sub(r'[<>"\\|?*]', '', name)
     name = re.sub(r'\s?:\s?', ' - ', name)
-    name = re.sub(r'\s?/\s?', ' and ', name)
-    return name
+    return re.sub(r'\s?/\s?', ' and ', name)
 
 def print_chapter(page: Page, url: str, file: Path) -> None:
     page.goto(url)
@@ -52,13 +51,14 @@ def print_chapter(page: Page, url: str, file: Path) -> None:
         await_stable_html(page, section)
     page.pdf(path=file)
 
-def print_zybook(page: Page, zybook_url: str, output_dir: Path = Path('.'), chapters_slice: slice = None) -> None:
+def print_zybook(page: Page, zybook_url: str, output_dir: Path = Path('.'),
+                 chapters_slice: Optional[slice] = None) -> None:
     page.goto(zybook_url)
     expect(page.locator('.table-of-contents')).to_be_visible()
 
     chapters = [
-	    x.query_selector('.chapter-title').text_content().strip()
-	    for x in page.locator('ul > li').element_handles()
+        x.query_selector('.chapter-title').text_content().strip()
+        for x in page.locator('ul > li').element_handles()
     ]
     logging.debug(f'Chapters: {chapters}')
     base_url = page.url.rstrip('/')
@@ -83,11 +83,14 @@ def dl(page: Page, args: argparse.Namespace) -> None:
         args.chapters_slice
     )
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Downloads zyBooks e-textbook chapters as PDFs')
-    parser.add_argument('-a', '--auth-file', type=path_arg, default='~/.download-zybooks-state.json', help='File storing authenticated session state')
-    parser.add_argument('--no-headless', dest='headless', action='store_false', help='Do not run browser in headless mode')
-    parser.add_argument('-v', '--verbose', dest='verbosity', action='count', default=0, help='Logging verbosity (0-3 occurences); ERROR=0, WARN=1, INFO=2, DEBUG=3')
+    parser.add_argument('-a', '--auth-file', type=path_arg, default='~/.download-zybooks-state.json',
+                        help='File storing authenticated session state')
+    parser.add_argument('--no-headless', dest='headless', action='store_false',
+                        help='Do not run browser in headless mode')
+    parser.add_argument('-v', '--verbose', dest='verbosity', action='count', default=0,
+                        help='Logging verbosity (0-3 occurences); ERROR=0, WARN=1, INFO=2, DEBUG=3')
     subparsers = parser.add_subparsers(required=True)
 
     parser_auth = subparsers.add_parser('auth', help='Authenticate to zyBooks and save authenticated state to file')
@@ -95,9 +98,12 @@ def main():
     parser_auth.set_defaults(func=authenticate.authenticate)
 
     parser_dl = subparsers.add_parser('dl', help='Download a zyBooks textbook')
-    parser_dl.add_argument('zybook_url', help='URL of the zyBooks textbook to download')
-    parser_dl.add_argument('-o', '--output-dir', type=path_arg, default='zybooks', help='Directory PDFs will be written to')
-    parser_dl.add_argument('-s', '--chapters-slice', type=slice_arg, help='Slice object to limit which chapters should be printed')
+    parser_dl.add_argument('zybook_url',
+                           help='URL of the zyBooks textbook to download')
+    parser_dl.add_argument('-o', '--output-dir', type=path_arg, default='zybooks',
+                           help='Directory PDFs will be written to')
+    parser_dl.add_argument('-s', '--chapters-slice', type=slice_arg,
+                           help='Slice object to limit which chapters should be printed')
     parser_dl.set_defaults(func=dl)
 
     args = parser.parse_args()
